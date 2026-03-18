@@ -170,14 +170,10 @@ public class PricingService
             cmd.ExecuteNonQuery();
           }
         }
-        else if (refType == RefType.PriceReport)
+        if (refType == RefType.PriceReport)
         {
           // write out required part(s) to the report file
           sr.WriteLine($"{cabinetValue.thisPartSku},{cabinetValue.thisPartHeight},{cabinetValue.thisPartWidth},{cabinetValue.thisPartDepth},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetValue.thisPartCost},{thisPartQty},{cabinetValue.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
-        }
-        else
-        {
-          // Just get the cost
         }
 
         // get feature cost

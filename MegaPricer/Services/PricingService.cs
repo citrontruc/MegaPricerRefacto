@@ -20,9 +20,9 @@ public class PricingService
     _wallRepository = wallRepository;
   }
 
-  public async Task<Result<PriceResult>> CalculatePrice(int kitchenId, int wallOrderNum, string userName, RefType refType)
+  public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
   {
-    if (Context.Session[userName]["PricingOff"].ToString() == "Y") return Result<PriceResult>.Success(new PriceResult(0, 0, 0));
+    if (Context.Session[customerOrder.userName]["PricingOff"].ToString() == "Y") return Result<PriceResult>.Success(new PriceResult(0, 0, 0));
 
     Kitchen kitchen = new Kitchen();
     Order order = new Order();
@@ -37,20 +37,20 @@ public class PricingService
     decimal thisTotalPartCost = 0;
     StreamWriter sr = null;
 
-    Context.Session[userName]["WallWeight"] = 0;
+    Context.Session[customerOrder.userName]["WallWeight"] = 0;
 
     try
     {
-      if (wallOrderNum == 0)
+      if (customerOrder.wallOrderNum == 0)
       {
         return Result<PriceResult>.Failure(new Error("Session Expired", "Session expired: Log in again."));
       }
-      if (kitchenId <= 0)
+      if (customerOrder.kitchenId <= 0)
       {
         return Result<PriceResult>.Failure(new Error("Invalid ID", "Invalid KitchenId"));
       }
-      kitchen.GetCustomerKitchen(kitchenId, userName);
-      var WallDtoValues = await _wallRepository.RetrieveKitchenWallAsync(kitchenId, wallOrderNum);
+      kitchen.GetCustomerKitchen(customerOrder.kitchenId, customerOrder.userName);
+      var WallDtoValues = await _wallRepository.RetrieveKitchenWallAsync(customerOrder.kitchenId, customerOrder.wallOrderNum);
 
       if (WallDtoValues.Count() == 0)
       {
@@ -63,14 +63,14 @@ public class PricingService
         string baseDirectory = AppContext.BaseDirectory;
         string path = baseDirectory + "Orders.csv";
         sr = new StreamWriter(path);
-        sr.WriteLine($"{kitchen.Name} ({kitchen.KitchenId}) - Run time: {DateTime.Now.ToLongTimeString()} ");
+        sr.WriteLine($"{kitchen.Name} ({kitchen.KitchenId}) - Run time: {DateTime.Now:T} ");
         sr.WriteLine("");
         sr.WriteLine("Part Name,Part SKU,Height,Width,Depth,Color,Sq Ft $, Lin Ft $,Per Piece $,# Needed,Part Price,Add On %,Total Part Price");
       }
       else if (refType == RefType.Order)
       {
         // create a new order
-        order.KitchenId = kitchenId;
+        order.KitchenId = customerOrder.kitchenId;
         using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
         {
           var cmd = conn.CreateCommand();
@@ -140,7 +140,7 @@ public class PricingService
           {
             var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT * FROM UserMarkups WHERE UserName = @userName";
-            cmd.Parameters.AddWithValue("@userName", userName);
+            cmd.Parameters.AddWithValue("@userName", customerOrder.userName);
             conn.Open();
             using (SqliteDataReader dr = cmd.ExecuteReader())
             {

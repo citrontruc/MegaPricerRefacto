@@ -1,4 +1,5 @@
 ﻿using MegaPricer.Data;
+using MegaPricer.Entities;
 using MegaPricer.Services;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -34,6 +35,15 @@ public class PlaceOrderModel : PageModel
     }
 
     string userName = User.Identity.Name;
-    (await _pricingService.CalculatePrice(1, 1, userName, RefType.Order)).Value.ToString();
+    (await _pricingService.CalculatePrice(
+      new CustomerOrder() 
+        {
+          kitchenId = 1,
+          wallOrderNum = 1,
+          userName = userName
+        },
+        RefType.Order
+      )
+    ).Value.ToString();
   }
 }

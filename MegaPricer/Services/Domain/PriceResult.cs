@@ -17,7 +17,7 @@ public record PriceResult
 
   public override string ToString()
   {
-    return $"${GlobalHelpers.Format(Subtotal).ToString("F2")}|${GlobalHelpers.Format(SubtotalFlat).ToString("F2")}|${GlobalHelpers.Format(SubtotalPlus).ToString("F2")}";
+    return $"${GlobalHelpers.Format(Subtotal):F2}|${GlobalHelpers.Format(SubtotalFlat):F2}|${GlobalHelpers.Format(SubtotalPlus):F2}";
   }
 
 }

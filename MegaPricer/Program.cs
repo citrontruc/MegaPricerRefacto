@@ -18,8 +18,9 @@ builder.Services.AddRazorPages(options =>
   options.Conventions.AuthorizeFolder("/");
 });
 
-builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
 builder.Services.AddScoped<ICabinetRepository, CabinetRepository>();
+builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
+builder.Services.AddScoped<IWallRepository, WallRepository>();
 builder.Services.AddScoped<PricingService>();
 
 var app = builder.Build();

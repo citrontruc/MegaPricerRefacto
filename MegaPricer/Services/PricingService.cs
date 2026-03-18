@@ -11,22 +11,23 @@ public class PricingService
 {
   private IFeatureRepository _featureRepository;
   private ICabinetRepository _cabinetRepository;
+  private IWallRepository _wallRepository;
 
-  public PricingService(IFeatureRepository featureRepository, ICabinetRepository cabinetRepository)
+  public PricingService(IFeatureRepository featureRepository, ICabinetRepository cabinetRepository, IWallRepository wallRepository)
   {
     _featureRepository = featureRepository;
     _cabinetRepository = cabinetRepository;
+    _wallRepository = wallRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(int kitchenId, int wallOrderNum, string userName, RefType refType)
   {
-    if (Context.Session[userName]["PricingOff"] == "Y") return Result<PriceResult>.Success(new PriceResult(0, 0, 0));
+    if (Context.Session[userName]["PricingOff"].ToString() == "Y") return Result<PriceResult>.Success(new PriceResult(0, 0, 0));
 
     Kitchen kitchen = new Kitchen();
     Order order = new Order();
-    CabinetDto cabinetDto = new();
+    CabinetDto lastPart = new();
     PriceResult priceResult = new(0, 0, 0);
-    int defaultColor = 0;
     string thisPartColorName = "";
     float thisColorMarkup = 0;
     float thisColorSquareFoot = 0;
@@ -34,9 +35,6 @@ public class PricingService
     float thisUserMarkup = 0;
     int thisPartQty = 0;
     decimal thisTotalPartCost = 0;
-    bool isIsland = false;
-    float wallHeight = 0;
-    DataTable dt = new DataTable();
     StreamWriter sr = null;
 
     Context.Session[userName]["WallWeight"] = 0;
@@ -52,27 +50,9 @@ public class PricingService
         return Result<PriceResult>.Failure(new Error("Invalid ID", "Invalid KitchenId"));
       }
       kitchen.GetCustomerKitchen(kitchenId, userName);
-      using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
-      {
-        var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT * FROM Walls WHERE KitchenId = @kitchenId AND WallOrder = @wallOrderNum";
-        cmd.Parameters.AddWithValue("@kitchenId", kitchenId);
-        cmd.Parameters.AddWithValue("@wallOrderNum", wallOrderNum);
-        conn.Open();
-        using (SqliteDataReader dr = cmd.ExecuteReader())
-        {
-          do
-          {
-            dt = new DataTable();
-            dt.BeginLoadData();
-            dt.Load(dr);
-            dt.EndLoadData();
+      var WallDtoValues = await _wallRepository.RetrieveKitchenWallAsync(kitchenId, wallOrderNum);
 
-          } while (!dr.IsClosed && dr.NextResult());
-        }
-      }
-
-      if (dt.Rows.Count == 0)
+      if (WallDtoValues.Count() == 0)
       {
         return Result<PriceResult>.Failure(new Error("Invalid Value", "Invalid wallOrderNum"));
       }
@@ -107,32 +87,32 @@ public class PricingService
         }
       }
 
-      defaultColor = Convert.ToInt32(dt.Rows[0]["CabinetColor"]);// dt.Rows[0].Field<int>("CabinetColor");
-      int wallId = Convert.ToInt32(dt.Rows[0]["WallId"]);
-      isIsland = Convert.ToBoolean(dt.Rows[0]["IsIsland"]);
-      wallHeight = Convert.ToSingle(dt.Rows[0]["Height"]);
+      int defaultColorId = WallDtoValues.First().cabinetColorId;
+      int wallId = WallDtoValues.First().wallId;
+      bool isIsland = WallDtoValues.First().isIsland;
+      float wallHeight = WallDtoValues.First().wallHeight;
 
       var cabinetWithCorrectWallId = await _cabinetRepository.RetrieveCabinetOnWallId(wallId);
 
       float totalCabinetHeight = 0;
       foreach (CabinetDto cabinetValue in cabinetWithCorrectWallId) // each cabinet
       {
-        cabinetDto = cabinetValue;
-        totalCabinetHeight += cabinetDto.thisPartHeight;
+        lastPart = cabinetValue;
+        totalCabinetHeight += cabinetValue.thisPartHeight;
 
-        if (!String.IsNullOrEmpty(cabinetDto.thisPartSku))
+        if (!String.IsNullOrEmpty(cabinetValue.thisPartSku))
         {
           using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
           {
             var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT * FROM PricingSkus WHERE SKU = @sku";
-            cmd.Parameters.AddWithValue("@sku", cabinetDto.thisPartSku);
+            cmd.Parameters.AddWithValue("@sku", cabinetValue.thisPartSku);
             conn.Open();
             using (SqliteDataReader dr = cmd.ExecuteReader())
             {
               if (dr.HasRows && dr.Read())
               {
-                cabinetDto.thisPartCost = dr.GetDecimal("WholesalePrice");
+                cabinetValue.thisPartCost = dr.GetDecimal("WholesalePrice");
               }
             }
           }
@@ -140,7 +120,7 @@ public class PricingService
           {
             var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT * FROM PricingColors WHERE PricingColorId = @pricingColorId";
-            cmd.Parameters.AddWithValue("@pricingColorId", cabinetDto.thisPartColorId);
+            cmd.Parameters.AddWithValue("@pricingColorId", cabinetValue.thisPartColorId);
             conn.Open();
             using (SqliteDataReader dr = cmd.ExecuteReader())
             {
@@ -152,9 +132,9 @@ public class PricingService
               }
             }
           }
-          thisTotalPartCost = cabinetDto.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
+          thisTotalPartCost = cabinetValue.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
           priceResult.Subtotal += thisTotalPartCost;
-          priceResult.SubtotalFlat += cabinetDto.thisPartCost;
+          priceResult.SubtotalFlat += cabinetValue.thisPartCost;
 
           using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
           {
@@ -181,10 +161,10 @@ public class PricingService
             var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO ORDERITEM (OrderId,SKU,Quantity,BasePrice,Markup,UserMarkup) VALUES (@orderId,@sku,@quantity,@basePrice,@markup,@userMarkup)";
             cmd.Parameters.AddWithValue("@orderId", order.OrderId);
-            cmd.Parameters.AddWithValue("@sku", cabinetDto.thisPartSku);
+            cmd.Parameters.AddWithValue("@sku", cabinetValue.thisPartSku);
             cmd.Parameters.AddWithValue("@quantity", thisPartQty == 0 ? 1 : thisPartQty);
-            cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(cabinetDto.thisPartCost));
-            cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - cabinetDto.thisPartCost));
+            cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(cabinetValue.thisPartCost));
+            cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - cabinetValue.thisPartCost));
             cmd.Parameters.AddWithValue("@userMarkup", GlobalHelpers.Format(thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100) - thisTotalPartCost));
             conn.Open();
             cmd.ExecuteNonQuery();
@@ -193,7 +173,7 @@ public class PricingService
         else if (refType == RefType.PriceReport)
         {
           // write out required part(s) to the report file
-          sr.WriteLine($"{cabinetDto.thisPartSku},{cabinetDto.thisPartHeight},{cabinetDto.thisPartWidth},{cabinetDto.thisPartDepth},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetDto.thisPartCost},{thisPartQty},{cabinetDto.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+          sr.WriteLine($"{cabinetValue.thisPartSku},{cabinetValue.thisPartHeight},{cabinetValue.thisPartWidth},{cabinetValue.thisPartDepth},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetValue.thisPartCost},{thisPartQty},{cabinetValue.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
         }
         else
         {
@@ -201,7 +181,7 @@ public class PricingService
         }
 
         // get feature cost
-        var allCabinetFeature = await _featureRepository.RetrieveCabinetFeaturesAsync(cabinetDto.cabinetId);
+        var allCabinetFeature = await _featureRepository.RetrieveCabinetFeaturesAsync(cabinetValue.cabinetId);
 
         using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString)){
           foreach (CabinetFeatureDto cabinetFeature in allCabinetFeature)
@@ -269,27 +249,27 @@ public class PricingService
         if (remainingWallHeight > 0)
         {
           // get width from last cabinet
-          float width = cabinetDto.thisPartWidth;
+          float width = lastPart.thisPartWidth;
           float area = remainingWallHeight * width;
           using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
           {
             var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT * FROM PricingColors WHERE PricingColorId = @pricingColorId";
-            cmd.Parameters.AddWithValue("@pricingColorId", defaultColor);
+            cmd.Parameters.AddWithValue("@pricingColorId", defaultColorId);
             conn.Open();
             using (SqliteDataReader dr = cmd.ExecuteReader())
             {
               if (dr.HasRows && dr.Read())
               {
-                cabinetDto.thisPartSku = "PAINT";
+                lastPart.thisPartSku = "PAINT";
                 thisPartColorName = dr.GetString("Name");
                 thisColorMarkup = dr.GetFloat("PercentMarkup");
                 thisColorSquareFoot = dr.GetFloat("ColorPerSquareFoot");
 
-                cabinetDto.thisPartCost = (decimal)(area * thisColorSquareFoot / 144);
-                thisTotalPartCost = cabinetDto.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
+                lastPart.thisPartCost = (decimal)(area * thisColorSquareFoot / 144);
+                thisTotalPartCost = lastPart.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
                 priceResult.Subtotal += thisTotalPartCost;
-                priceResult.SubtotalFlat += cabinetDto.thisPartCost;
+                priceResult.SubtotalFlat += lastPart.thisPartCost;
                 priceResult.SubtotalPlus += thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
               }
             }
@@ -302,10 +282,10 @@ public class PricingService
               var cmd = conn.CreateCommand();
               cmd.CommandText = "INSERT INTO ORDERITEM (OrderId,SKU,Quantity,BasePrice,Markup,UserMarkup) VALUES (@orderId,@sku,@quantity,@basePrice,@markup,@userMarkup)";
               cmd.Parameters.AddWithValue("@orderId", order.OrderId);
-              cmd.Parameters.AddWithValue("@sku", cabinetDto.thisPartSku);
+              cmd.Parameters.AddWithValue("@sku", lastPart.thisPartSku);
               cmd.Parameters.AddWithValue("@quantity", thisPartQty == 0 ? 1 : thisPartQty);
-              cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(cabinetDto.thisPartCost));
-              cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - cabinetDto.thisPartCost));
+              cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(lastPart.thisPartCost));
+              cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - lastPart.thisPartCost));
               cmd.Parameters.AddWithValue("@userMarkup", GlobalHelpers.Format(thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100) - thisTotalPartCost));
               conn.Open();
               cmd.ExecuteNonQuery();
@@ -315,7 +295,7 @@ public class PricingService
           else if (refType == RefType.PriceReport)
           {
             // write out required part(s) to the report file
-            sr.WriteLine($"{cabinetDto.thisPartSku},{remainingWallHeight},{width},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetDto.thisPartCost},{thisPartQty},{cabinetDto.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+            sr.WriteLine($"{lastPart.thisPartSku},{remainingWallHeight},{width},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{lastPart.thisPartCost},{thisPartQty},{lastPart.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
           }
         }
       }

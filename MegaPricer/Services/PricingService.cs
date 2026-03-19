@@ -48,8 +48,8 @@ public class PricingService
     string thisPartColorName = "";
     float thisColorMarkup = 0;
     float thisColorSquareFoot = 0;
-    float thisLinearFootCost = 0;
-    int thisPartQty = 0;
+    float thisLinearFootCost = 0; // Not modified in whole script
+    int thisPartQty = 0; // Not modified in whole script
     decimal thisTotalPartCost = 0;
     float thisUserMarkup = 0;
     StreamWriter sr = null;

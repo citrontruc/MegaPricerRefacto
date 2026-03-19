@@ -25,6 +25,7 @@ builder.Services.AddScoped<IUserMarkupRepository, UserMarkupRepository>();
 builder.Services.AddScoped<IOrderItemRepository, OrderItemRepository>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IPricingColorsRepository, PricingColorsRepository>();
+builder.Services.AddScoped<IPricingSkuRepository, PricingSkuRepository>();
 builder.Services.AddScoped<PricingService>();
 
 var app = builder.Build();

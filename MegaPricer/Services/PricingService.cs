@@ -16,6 +16,7 @@ public class PricingService
   private IOrderItemRepository _orderItemRepository;
   private IOrderRepository _orderRepository;
   private IPricingColorsRepository _pricingColorsRepository;
+  private IPricingSkuRepository _pricingSkuRepository;
 
   public PricingService(
     IFeatureRepository featureRepository,
@@ -24,7 +25,8 @@ public class PricingService
     IUserMarkupRepository userMarkupRepository,
     IOrderItemRepository orderItemRepository,
     IPricingColorsRepository pricingColorsRepository,
-    IOrderRepository orderRepository
+    IOrderRepository orderRepository,
+    IPricingSkuRepository pricingSkuRepository
     )
   {
     _featureRepository = featureRepository;
@@ -34,6 +36,7 @@ public class PricingService
     _orderItemRepository = orderItemRepository;
     _pricingColorsRepository = pricingColorsRepository;
     _orderRepository = orderRepository;
+    _pricingSkuRepository = pricingSkuRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -111,20 +114,12 @@ public class PricingService
 
         if (!string.IsNullOrEmpty(cabinetValue.thisPartSku))
         {
-          using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+          var pricingSkuEnumerable = await _pricingSkuRepository.RetrievePricingSkuAsync(cabinetValue.thisPartSku);
+          if (pricingSkuEnumerable.Any())
           {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM PricingSkus WHERE SKU = @sku";
-            cmd.Parameters.AddWithValue("@sku", cabinetValue.thisPartSku);
-            conn.Open();
-            using (SqliteDataReader dr = cmd.ExecuteReader())
-            {
-              if (dr.HasRows && dr.Read())
-              {
-                cabinetValue.thisPartCost = dr.GetDecimal("WholesalePrice");
-              }
-            }
+            cabinetValue.thisPartCost = (decimal)pricingSkuEnumerable.First().WholesalePrice;
           }
+
           var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetValue.thisPartColorId);
           if (pricingColors.Any())
           {
@@ -165,50 +160,50 @@ public class PricingService
         // get feature cost
         var allCabinetFeature = await _featureRepository.RetrieveCabinetFeaturesAsync(cabinetValue.cabinetId);
 
-          foreach (CabinetFeatureDto cabinetFeature in allCabinetFeature)
+        foreach (CabinetFeatureDto cabinetFeature in allCabinetFeature)
+        {
+          if (cabinetFeature.ColorId > 0)
           {
-            if (cabinetFeature.ColorId > 0)
+            PricingColorsDto pricingColorsDtoCabinet = new();
+            var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetFeature.ColorId);
+            if (pricingColors.Any())
             {
-              PricingColorsDto pricingColorsDtoCabinet = new();
-              var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetFeature.ColorId);
-              if (pricingColors.Any())
-              {
-                pricingColorsDtoCabinet = pricingColors.First();
-                cabinetFeature.FeatureColorName = pricingColorsDtoCabinet.ColorName;
-                cabinetFeature.WholesalePrice = pricingColorsDtoCabinet.WholesalePrice;
+              pricingColorsDtoCabinet = pricingColors.First();
+              cabinetFeature.FeatureColorName = pricingColorsDtoCabinet.ColorName;
+              cabinetFeature.WholesalePrice = pricingColorsDtoCabinet.WholesalePrice;
 
-                float areaInSf = cabinetFeature.FeatureHeight * cabinetFeature.FeatureWidth / 144;
-                cabinetFeature.FeatureCost = (decimal)(areaInSf * pricingColorsDtoCabinet.ColorSquareFoot);
-                if (cabinetFeature.FeatureCost == 0)
-                {
-                  cabinetFeature.FeatureCost = (decimal)(cabinetFeature.Quantity * cabinetFeature.WholesalePrice);
-                }
-                cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + pricingColorsDto.ColorMarkup / 100);
-                priceResult.Subtotal += cabinetFeature.ThisTotalFeatureCost;
-                priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
-                priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
-              }
-              if (refType == RefType.Order)
+              float areaInSf = cabinetFeature.FeatureHeight * cabinetFeature.FeatureWidth / 144;
+              cabinetFeature.FeatureCost = (decimal)(areaInSf * pricingColorsDtoCabinet.ColorSquareFoot);
+              if (cabinetFeature.FeatureCost == 0)
               {
-                OrderItemDto orderItemDto = new OrderItemDto()
-                {
-                  OrderId = order.OrderId,
-                  OrderSku = cabinetFeature.FeatureSKU,
-                  OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
-                  Cost = cabinetFeature.FeatureCost,
-                  MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
-                  UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100
-                };
-                await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
+                cabinetFeature.FeatureCost = (decimal)(cabinetFeature.Quantity * cabinetFeature.WholesalePrice);
+              }
+              cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + pricingColorsDto.ColorMarkup / 100);
+              priceResult.Subtotal += cabinetFeature.ThisTotalFeatureCost;
+              priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
+              priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
+            }
+            if (refType == RefType.Order)
+            {
+              OrderItemDto orderItemDto = new OrderItemDto()
+              {
+                OrderId = order.OrderId,
+                OrderSku = cabinetFeature.FeatureSKU,
+                OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
+                Cost = cabinetFeature.FeatureCost,
+                MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
+                UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100
+              };
+              await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
 
-              }
-              else if (refType == RefType.PriceReport)
-              {
-                // write out required part(s) to the report file
-                sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{pricingColorsDtoCabinet.ColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
-              }
+            }
+            else if (refType == RefType.PriceReport)
+            {
+              // write out required part(s) to the report file
+              sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{pricingColorsDtoCabinet.ColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
             }
           }
+        }
       }
 
       if (!isIsland)

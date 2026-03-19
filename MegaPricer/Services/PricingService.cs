@@ -14,6 +14,7 @@ public class PricingService
   private IWallRepository _wallRepository;
   private IUserMarkupRepository _userMarkupRepository;
   private IOrderItemRepository _orderItemRepository;
+  private IOrderRepository _orderRepository;
   private IPricingColorsRepository _pricingColorsRepository;
 
   public PricingService(
@@ -22,7 +23,8 @@ public class PricingService
     IWallRepository wallRepository,
     IUserMarkupRepository userMarkupRepository,
     IOrderItemRepository orderItemRepository,
-    IPricingColorsRepository pricingColorsRepository
+    IPricingColorsRepository pricingColorsRepository,
+    IOrderRepository orderRepository
     )
   {
     _featureRepository = featureRepository;
@@ -31,6 +33,7 @@ public class PricingService
     _userMarkupRepository = userMarkupRepository;
     _orderItemRepository = orderItemRepository;
     _pricingColorsRepository = pricingColorsRepository;
+    _orderRepository = orderRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -85,20 +88,14 @@ public class PricingService
       {
         // create a new order
         order.KitchenId = customerOrder.kitchenId;
-        using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+        OrderDto orderDto = new OrderDto()
         {
-          var cmd = conn.CreateCommand();
-          cmd.CommandText = "INSERT INTO ORDERS (KitchenId,OrderDate,OrderStatus,OrderType) VALUES (@kitchenId,@orderDate,@orderStatus,@orderType)";
-          cmd.Parameters.AddWithValue("@kitchenId", order.KitchenId);
-          cmd.Parameters.AddWithValue("@orderDate", order.OrderDate);
-          cmd.Parameters.AddWithValue("@orderStatus", order.OrderStatus);
-          cmd.Parameters.AddWithValue("@orderType", order.OrderType);
-          conn.Open();
-          cmd.ExecuteNonQuery();
-          var cmd2 = conn.CreateCommand();
-          cmd2.CommandText = "SELECT last_insert_rowid();";
-          order.OrderId = Convert.ToInt32(cmd2.ExecuteScalar());
-        }
+          KitchenId = order.KitchenId,
+          OrderDate = order.OrderDate,
+          OrderStatus = order.OrderStatus,
+          OrderType = order.OrderType
+        };
+        order.OrderId = await _orderRepository.StoreOrderAsync(orderDto);
       }
 
       int defaultColorId = WallDtoValues.First().cabinetColorId;

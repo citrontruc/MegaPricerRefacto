@@ -14,13 +14,15 @@ public class PricingService
   private IWallRepository _wallRepository;
   private IUserMarkupRepository _userMarkupRepository;
   private IOrderItemRepository _orderItemRepository;
+  private IPricingColorsRepository _pricingColorsRepository;
 
   public PricingService(
     IFeatureRepository featureRepository,
     ICabinetRepository cabinetRepository,
     IWallRepository wallRepository,
     IUserMarkupRepository userMarkupRepository,
-    IOrderItemRepository orderItemRepository
+    IOrderItemRepository orderItemRepository,
+    IPricingColorsRepository pricingColorsRepository
     )
   {
     _featureRepository = featureRepository;
@@ -28,6 +30,7 @@ public class PricingService
     _wallRepository = wallRepository;
     _userMarkupRepository = userMarkupRepository;
     _orderItemRepository = orderItemRepository;
+    _pricingColorsRepository = pricingColorsRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -37,6 +40,7 @@ public class PricingService
     Kitchen kitchen = new Kitchen();
     Order order = new Order();
     CabinetDto lastPart = new();
+    PricingColorsDto pricingColorsDto = new();
     PriceResult priceResult = new(0, 0, 0);
     string thisPartColorName = "";
     float thisColorMarkup = 0;
@@ -126,22 +130,15 @@ public class PricingService
               }
             }
           }
-          using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+          var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetValue.thisPartColorId);
+          if (pricingColors.Any())
           {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM PricingColors WHERE PricingColorId = @pricingColorId";
-            cmd.Parameters.AddWithValue("@pricingColorId", cabinetValue.thisPartColorId);
-            conn.Open();
-            using (SqliteDataReader dr = cmd.ExecuteReader())
-            {
-              if (dr.HasRows && dr.Read())
-              {
-                thisPartColorName = dr.GetString("Name");
-                thisColorMarkup = dr.GetFloat("PercentMarkup");
-                thisColorSquareFoot = dr.GetFloat("ColorPerSquareFoot");
-              }
-            }
+            pricingColorsDto = pricingColors.First();
+            thisPartColorName = pricingColorsDto.ColorName;
+            thisColorMarkup = pricingColorsDto.ColorMarkup;
+            thisColorSquareFoot = pricingColorsDto.ColorSquareFoot;
           }
+
           thisTotalPartCost = cabinetValue.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
           priceResult.Subtotal += thisTotalPartCost;
           priceResult.SubtotalFlat += cabinetValue.thisPartCost;
@@ -176,52 +173,41 @@ public class PricingService
         // get feature cost
         var allCabinetFeature = await _featureRepository.RetrieveCabinetFeaturesAsync(cabinetValue.cabinetId);
 
-        using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString)){
           foreach (CabinetFeatureDto cabinetFeature in allCabinetFeature)
           {
             if (cabinetFeature.ColorId > 0)
             {
-              var cmd = conn.CreateCommand();
-              cmd.CommandText = "SELECT * FROM PricingColors WHERE PricingColorId = @pricingColorId";
-              cmd.Parameters.AddWithValue("@pricingColorId", cabinetFeature.ColorId);
-              conn.Open();
-              using (SqliteDataReader dr = cmd.ExecuteReader())
+              var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetFeature.ColorId);
+              if (pricingColors.Any())
               {
-                if (dr.HasRows && dr.Read())
-                {
-                  cabinetFeature.FeatureColorName = dr.GetString("Name");
-                  float colorMarkup = dr.GetFloat("PercentMarkup");
-                  thisColorSquareFoot = dr.GetFloat("ColorPerSquareFoot");
-                  cabinetFeature.WholesalePrice = dr.GetFloat("WholesalePrice");
+                pricingColorsDto = pricingColors.First();
+                cabinetFeature.FeatureColorName = pricingColorsDto.ColorName;
+                thisColorSquareFoot = pricingColorsDto.ColorSquareFoot;
+                cabinetFeature.WholesalePrice = pricingColorsDto.WholesalePrice;
 
-                  float areaInSf = cabinetFeature.FeatureHeight * cabinetFeature.FeatureWidth / 144;
-                  cabinetFeature.FeatureCost = (decimal)(areaInSf * thisColorSquareFoot);
-                  if (cabinetFeature.FeatureCost == 0)
-                  {
-                    cabinetFeature.FeatureCost = (decimal)(cabinetFeature.Quantity * cabinetFeature.WholesalePrice);
-                  }
-                  cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + thisColorMarkup / 100);
-                  priceResult.Subtotal += cabinetFeature.ThisTotalFeatureCost;
-                  priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
-                  priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
+                float areaInSf = cabinetFeature.FeatureHeight * cabinetFeature.FeatureWidth / 144;
+                cabinetFeature.FeatureCost = (decimal)(areaInSf * thisColorSquareFoot);
+                if (cabinetFeature.FeatureCost == 0)
+                {
+                  cabinetFeature.FeatureCost = (decimal)(cabinetFeature.Quantity * cabinetFeature.WholesalePrice);
                 }
+                cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + thisColorMarkup / 100);
+                priceResult.Subtotal += cabinetFeature.ThisTotalFeatureCost;
+                priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
+                priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
               }
               if (refType == RefType.Order)
               {
-                // add this part to the order
-                using (var conn2 = new SqliteConnection(ConfigurationSettings.ConnectionString))
+                OrderItemDto orderItemDto = new OrderItemDto()
                 {
-                  cmd = conn2.CreateCommand();
-                  cmd.CommandText = "INSERT INTO ORDERITEM (OrderId,SKU,Quantity,BasePrice,Markup,UserMarkup) VALUES (@orderId,@sku,@quantity,@basePrice,@markup,@userMarkup)";
-                  cmd.Parameters.AddWithValue("@orderId", order.OrderId);
-                  cmd.Parameters.AddWithValue("@sku", cabinetFeature.FeatureSKU);
-                  cmd.Parameters.AddWithValue("@quantity", cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity);
-                  cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(cabinetFeature.FeatureCost));
-                  cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost));
-                  cmd.Parameters.AddWithValue("@userMarkup", GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100) - cabinetFeature.ThisTotalFeatureCost));
-                  conn2.Open();
-                  cmd.ExecuteNonQuery();
-                }
+                  OrderId = order.OrderId,
+                  OrderSku = cabinetFeature.FeatureSKU,
+                  OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
+                  Cost = cabinetFeature.FeatureCost,
+                  MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
+                  UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100
+                };
+                await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
 
               }
               else if (refType == RefType.PriceReport)
@@ -229,10 +215,8 @@ public class PricingService
                 // write out required part(s) to the report file
                 sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{thisColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
               }
-
             }
           }
-        }
       }
 
       if (!isIsland)
@@ -244,46 +228,34 @@ public class PricingService
           // get width from last cabinet
           float width = lastPart.thisPartWidth;
           float area = remainingWallHeight * width;
-          using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+          var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(defaultColorId);
+          if (pricingColors.Any())
           {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM PricingColors WHERE PricingColorId = @pricingColorId";
-            cmd.Parameters.AddWithValue("@pricingColorId", defaultColorId);
-            conn.Open();
-            using (SqliteDataReader dr = cmd.ExecuteReader())
-            {
-              if (dr.HasRows && dr.Read())
-              {
-                lastPart.thisPartSku = "PAINT";
-                thisPartColorName = dr.GetString("Name");
-                thisColorMarkup = dr.GetFloat("PercentMarkup");
-                thisColorSquareFoot = dr.GetFloat("ColorPerSquareFoot");
+            pricingColorsDto = pricingColors.First();
+            lastPart.thisPartSku = "PAINT";
+            thisPartColorName = pricingColorsDto.ColorName;
+            thisColorMarkup = pricingColorsDto.ColorMarkup;
+            thisColorSquareFoot =  pricingColorsDto.ColorSquareFoot;
 
-                lastPart.thisPartCost = (decimal)(area * thisColorSquareFoot / 144);
-                thisTotalPartCost = lastPart.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
-                priceResult.Subtotal += thisTotalPartCost;
-                priceResult.SubtotalFlat += lastPart.thisPartCost;
-                priceResult.SubtotalPlus += thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
-              }
-            }
+            lastPart.thisPartCost = (decimal)(area * thisColorSquareFoot / 144);
+            thisTotalPartCost = lastPart.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
+            priceResult.Subtotal += thisTotalPartCost;
+            priceResult.SubtotalFlat += lastPart.thisPartCost;
+            priceResult.SubtotalPlus += thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
           }
+
           if (refType == RefType.Order)
           {
-            // add this part to the order
-            using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
-            {
-              var cmd = conn.CreateCommand();
-              cmd.CommandText = "INSERT INTO ORDERITEM (OrderId,SKU,Quantity,BasePrice,Markup,UserMarkup) VALUES (@orderId,@sku,@quantity,@basePrice,@markup,@userMarkup)";
-              cmd.Parameters.AddWithValue("@orderId", order.OrderId);
-              cmd.Parameters.AddWithValue("@sku", lastPart.thisPartSku);
-              cmd.Parameters.AddWithValue("@quantity", thisPartQty == 0 ? 1 : thisPartQty);
-              cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(lastPart.thisPartCost));
-              cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - lastPart.thisPartCost));
-              cmd.Parameters.AddWithValue("@userMarkup", GlobalHelpers.Format(thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100) - thisTotalPartCost));
-              conn.Open();
-              cmd.ExecuteNonQuery();
-            }
-
+            OrderItemDto orderItemDto = new OrderItemDto()
+              {
+                OrderId = order.OrderId,
+                OrderSku = lastPart.thisPartSku,
+                OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
+                Cost = lastPart.thisPartCost,
+                MarkUp = (float)(thisTotalPartCost - lastPart.thisPartCost),
+                UserMarkup = (float)thisTotalPartCost * thisUserMarkup / 100
+              };
+              await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
           }
           else if (refType == RefType.PriceReport)
           {

@@ -12,12 +12,19 @@ public class PricingService
   private IFeatureRepository _featureRepository;
   private ICabinetRepository _cabinetRepository;
   private IWallRepository _wallRepository;
+  private IUserMarkupRepository _userMarkupRepository;
 
-  public PricingService(IFeatureRepository featureRepository, ICabinetRepository cabinetRepository, IWallRepository wallRepository)
+  public PricingService(
+    IFeatureRepository featureRepository,
+    ICabinetRepository cabinetRepository,
+    IWallRepository wallRepository,
+    IUserMarkupRepository userMarkupRepository
+    )
   {
     _featureRepository = featureRepository;
     _cabinetRepository = cabinetRepository;
     _wallRepository = wallRepository;
+    _userMarkupRepository = userMarkupRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -32,9 +39,9 @@ public class PricingService
     float thisColorMarkup = 0;
     float thisColorSquareFoot = 0;
     float thisLinearFootCost = 0;
-    float thisUserMarkup = 0;
     int thisPartQty = 0;
     decimal thisTotalPartCost = 0;
+    float thisUserMarkup = 0;
     StreamWriter sr = null;
 
     Context.Session[customerOrder.userName]["WallWeight"] = 0;
@@ -100,7 +107,7 @@ public class PricingService
         lastPart = cabinetValue;
         totalCabinetHeight += cabinetValue.thisPartHeight;
 
-        if (!String.IsNullOrEmpty(cabinetValue.thisPartSku))
+        if (!string.IsNullOrEmpty(cabinetValue.thisPartSku))
         {
           using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
           {
@@ -136,19 +143,10 @@ public class PricingService
           priceResult.Subtotal += thisTotalPartCost;
           priceResult.SubtotalFlat += cabinetValue.thisPartCost;
 
-          using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+          var queryResultUserMarkup = await _userMarkupRepository.RetrieveUserMarkupAsync(customerOrder.userName);
+          if (queryResultUserMarkup.Any())
           {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM UserMarkups WHERE UserName = @userName";
-            cmd.Parameters.AddWithValue("@userName", customerOrder.userName);
-            conn.Open();
-            using (SqliteDataReader dr = cmd.ExecuteReader())
-            {
-              if (dr.HasRows && dr.Read())
-              {
-                thisUserMarkup = dr.GetFloat("MarkupPercent");
-              }
-            }
+            thisUserMarkup = queryResultUserMarkup.First().UserMarkup;
           }
           priceResult.SubtotalPlus = thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
         }

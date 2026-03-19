@@ -45,9 +45,7 @@ public class PricingService
     CabinetDto lastPart = new();
     PricingColorsDto pricingColorsDto = new();
     PriceResult priceResult = new(0, 0, 0);
-    string thisPartColorName = "";
-    float thisColorMarkup = 0;
-    float thisColorSquareFoot = 0;
+    //float thisColorSquareFoot = 0;
     float thisLinearFootCost = 0; // Not modified in whole script
     int thisPartQty = 0; // Not modified in whole script
     decimal thisTotalPartCost = 0;
@@ -131,12 +129,9 @@ public class PricingService
           if (pricingColors.Any())
           {
             pricingColorsDto = pricingColors.First();
-            thisPartColorName = pricingColorsDto.ColorName;
-            thisColorMarkup = pricingColorsDto.ColorMarkup;
-            thisColorSquareFoot = pricingColorsDto.ColorSquareFoot;
           }
 
-          thisTotalPartCost = cabinetValue.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
+          thisTotalPartCost = cabinetValue.thisPartCost * (decimal)(1 + pricingColorsDto.ColorMarkup / 100);
           priceResult.Subtotal += thisTotalPartCost;
           priceResult.SubtotalFlat += cabinetValue.thisPartCost;
 
@@ -164,7 +159,7 @@ public class PricingService
         if (refType == RefType.PriceReport)
         {
           // write out required part(s) to the report file
-          sr.WriteLine($"{cabinetValue.thisPartSku},{cabinetValue.thisPartHeight},{cabinetValue.thisPartWidth},{cabinetValue.thisPartDepth},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetValue.thisPartCost},{thisPartQty},{cabinetValue.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+          sr.WriteLine($"{cabinetValue.thisPartSku},{cabinetValue.thisPartHeight},{cabinetValue.thisPartWidth},{cabinetValue.thisPartDepth},{pricingColorsDto.ColorName},{pricingColorsDto.ColorSquareFoot},{thisLinearFootCost},{cabinetValue.thisPartCost},{thisPartQty},{cabinetValue.thisPartCost * thisPartQty},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
         }
 
         // get feature cost
@@ -174,21 +169,21 @@ public class PricingService
           {
             if (cabinetFeature.ColorId > 0)
             {
+              PricingColorsDto pricingColorsDtoCabinet = new();
               var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(cabinetFeature.ColorId);
               if (pricingColors.Any())
               {
-                pricingColorsDto = pricingColors.First();
-                cabinetFeature.FeatureColorName = pricingColorsDto.ColorName;
-                thisColorSquareFoot = pricingColorsDto.ColorSquareFoot;
-                cabinetFeature.WholesalePrice = pricingColorsDto.WholesalePrice;
+                pricingColorsDtoCabinet = pricingColors.First();
+                cabinetFeature.FeatureColorName = pricingColorsDtoCabinet.ColorName;
+                cabinetFeature.WholesalePrice = pricingColorsDtoCabinet.WholesalePrice;
 
                 float areaInSf = cabinetFeature.FeatureHeight * cabinetFeature.FeatureWidth / 144;
-                cabinetFeature.FeatureCost = (decimal)(areaInSf * thisColorSquareFoot);
+                cabinetFeature.FeatureCost = (decimal)(areaInSf * pricingColorsDtoCabinet.ColorSquareFoot);
                 if (cabinetFeature.FeatureCost == 0)
                 {
                   cabinetFeature.FeatureCost = (decimal)(cabinetFeature.Quantity * cabinetFeature.WholesalePrice);
                 }
-                cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + thisColorMarkup / 100);
+                cabinetFeature.ThisTotalFeatureCost = cabinetFeature.FeatureCost * (decimal)(1 + pricingColorsDto.ColorMarkup / 100);
                 priceResult.Subtotal += cabinetFeature.ThisTotalFeatureCost;
                 priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
                 priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
@@ -210,7 +205,7 @@ public class PricingService
               else if (refType == RefType.PriceReport)
               {
                 // write out required part(s) to the report file
-                sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{thisColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{thisColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
+                sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{pricingColorsDtoCabinet.ColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
               }
             }
           }
@@ -230,12 +225,8 @@ public class PricingService
           {
             pricingColorsDto = pricingColors.First();
             lastPart.thisPartSku = "PAINT";
-            thisPartColorName = pricingColorsDto.ColorName;
-            thisColorMarkup = pricingColorsDto.ColorMarkup;
-            thisColorSquareFoot =  pricingColorsDto.ColorSquareFoot;
-
-            lastPart.thisPartCost = (decimal)(area * thisColorSquareFoot / 144);
-            thisTotalPartCost = lastPart.thisPartCost * (decimal)(1 + thisColorMarkup / 100);
+            lastPart.thisPartCost = (decimal)(area * pricingColorsDto.ColorSquareFoot / 144);
+            thisTotalPartCost = lastPart.thisPartCost * (decimal)(1 + pricingColorsDto.ColorMarkup / 100);
             priceResult.Subtotal += thisTotalPartCost;
             priceResult.SubtotalFlat += lastPart.thisPartCost;
             priceResult.SubtotalPlus += thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
@@ -257,7 +248,7 @@ public class PricingService
           else if (refType == RefType.PriceReport)
           {
             // write out required part(s) to the report file
-            sr.WriteLine($"{lastPart.thisPartSku},{remainingWallHeight},{width},{thisPartColorName},{thisColorSquareFoot},{thisLinearFootCost},{lastPart.thisPartCost},{thisPartQty},{lastPart.thisPartCost * thisPartQty},{thisColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+            sr.WriteLine($"{lastPart.thisPartSku},{remainingWallHeight},{width},{pricingColorsDto.ColorName},{pricingColorsDto.ColorSquareFoot},{thisLinearFootCost},{lastPart.thisPartCost},{thisPartQty},{lastPart.thisPartCost * thisPartQty},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
           }
         }
       }

@@ -13,14 +13,17 @@ public class WallRepository : IWallRepository
 
     public async Task<IEnumerable<WallPricerDto>> RetrieveKitchenWallAsync(int kitchenId, int wallOrderNum)
     {
-        return await _context.Walls.Where(x => x.KitchenId == kitchenId && x.WallOrder == wallOrderNum).Select(
-        x => new WallPricerDto()
-            {
-                cabinetColorId = x.CabinetColor,
-                wallId = x.WallId,
-                isIsland = x.IsIsland,
-                wallHeight = x.Height
-            }
-        ).ToListAsync();
+        return await _context.Walls
+            .AsNoTracking()
+            .Where(x => x.KitchenId == kitchenId && x.WallOrder == wallOrderNum)
+            .Select(
+            x => new WallPricerDto()
+                {
+                    cabinetColorId = x.CabinetColor,
+                    wallId = x.WallId,
+                    isIsland = x.IsIsland,
+                    wallHeight = x.Height
+                }
+            ).ToListAsync();
     }
 }

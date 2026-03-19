@@ -13,18 +13,21 @@ public class PricingService
   private ICabinetRepository _cabinetRepository;
   private IWallRepository _wallRepository;
   private IUserMarkupRepository _userMarkupRepository;
+  private IOrderItemRepository _orderItemRepository;
 
   public PricingService(
     IFeatureRepository featureRepository,
     ICabinetRepository cabinetRepository,
     IWallRepository wallRepository,
-    IUserMarkupRepository userMarkupRepository
+    IUserMarkupRepository userMarkupRepository,
+    IOrderItemRepository orderItemRepository
     )
   {
     _featureRepository = featureRepository;
     _cabinetRepository = cabinetRepository;
     _wallRepository = wallRepository;
     _userMarkupRepository = userMarkupRepository;
+    _orderItemRepository = orderItemRepository;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -153,20 +156,16 @@ public class PricingService
 
         if (refType == RefType.Order)
         {
-          // add this part to the order
-          using (var conn = new SqliteConnection(ConfigurationSettings.ConnectionString))
+          OrderItemDto orderItemDto = new OrderItemDto()
           {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT INTO ORDERITEM (OrderId,SKU,Quantity,BasePrice,Markup,UserMarkup) VALUES (@orderId,@sku,@quantity,@basePrice,@markup,@userMarkup)";
-            cmd.Parameters.AddWithValue("@orderId", order.OrderId);
-            cmd.Parameters.AddWithValue("@sku", cabinetValue.thisPartSku);
-            cmd.Parameters.AddWithValue("@quantity", thisPartQty == 0 ? 1 : thisPartQty);
-            cmd.Parameters.AddWithValue("@basePrice", GlobalHelpers.Format(cabinetValue.thisPartCost));
-            cmd.Parameters.AddWithValue("@markup", GlobalHelpers.Format(thisTotalPartCost - cabinetValue.thisPartCost));
-            cmd.Parameters.AddWithValue("@userMarkup", GlobalHelpers.Format(thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100) - thisTotalPartCost));
-            conn.Open();
-            cmd.ExecuteNonQuery();
-          }
+            OrderId = order.OrderId,
+            OrderSku = cabinetValue.thisPartSku,
+            OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
+            Cost = cabinetValue.thisPartCost,
+            MarkUp = (float)(thisTotalPartCost - cabinetValue.thisPartCost),
+            UserMarkup = (float)thisTotalPartCost * (thisUserMarkup / 100)
+          };
+          await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
         }
         if (refType == RefType.PriceReport)
         {

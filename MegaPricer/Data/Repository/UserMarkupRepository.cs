@@ -13,12 +13,15 @@ public class UserMarkupRepository : IUserMarkupRepository
 
     public async Task<IEnumerable<UserMarkupDto>> RetrieveUserMarkupAsync(string userName)
     {
-        return await _context.UserMarkups.Where(x => x.UserName == userName).Select(
-        x => new UserMarkupDto()
-            {
-                UserName = x.UserName,
-                UserMarkup = x.MarkupPercent
-            }
-        ).ToListAsync();
+        return await _context.UserMarkups
+            .AsNoTracking()
+            .Where(x => x.UserName == userName)
+            .Select(
+            x => new UserMarkupDto()
+                {
+                    UserName = x.UserName,
+                    UserMarkup = x.MarkupPercent
+                }
+            ).ToListAsync();
     }
 }

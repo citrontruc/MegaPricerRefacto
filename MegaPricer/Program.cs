@@ -22,6 +22,7 @@ builder.Services.AddScoped<ICabinetRepository, CabinetRepository>();
 builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
 builder.Services.AddScoped<IWallRepository, WallRepository>();
 builder.Services.AddScoped<IUserMarkupRepository, UserMarkupRepository>();
+builder.Services.AddScoped<IOrderItemRepository, OrderItemRepository>();
 builder.Services.AddScoped<PricingService>();
 
 var app = builder.Build();

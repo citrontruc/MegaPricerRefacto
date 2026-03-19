@@ -13,7 +13,10 @@ public class FeatureRepository : IFeatureRepository
 
     public async Task<IEnumerable<CabinetFeatureDto>> RetrieveCabinetFeaturesAsync(int cabinetId)
   {
-    return await _context.Features.Where(x => x.CabinetId == cabinetId).Select(
+    return await _context.Features
+      .AsNoTracking()
+      .Where(x => x.CabinetId == cabinetId)
+      .Select(
         x => new CabinetFeatureDto()
             {
               FeatureId = x.FeatureId,

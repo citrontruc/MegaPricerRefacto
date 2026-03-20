@@ -69,13 +69,8 @@ public class PricingService
       {
         await writer.InitializeWriter(order, kitchen);
       }
-
-      int defaultColorId = WallDtoValues.First().cabinetColorId;
-      int wallId = WallDtoValues.First().wallId;
-      bool isIsland = WallDtoValues.First().isIsland;
-      float wallHeight = WallDtoValues.First().wallHeight;
-
-      var cabinetWithCorrectWallId = await _cabinetRepository.RetrieveCabinetOnWallId(wallId);
+      WallPricerDto wallPricerDto = WallDtoValues.First();
+      var cabinetWithCorrectWallId = await _cabinetRepository.RetrieveCabinetOnWallId(wallPricerDto.wallId);
 
       float totalCabinetHeight = 0;
       foreach (CabinetDto cabinetValue in cabinetWithCorrectWallId) // each cabinet
@@ -124,7 +119,6 @@ public class PricingService
           LinearFootCost = thisLinearFootCost,
           TotalPartCost = thisTotalPartCost,
           pricingColorsDto = pricingColorsDto
-
         };
         if (writer != null)
         {
@@ -159,7 +153,7 @@ public class PricingService
             }
 
             orderItemDto = new OrderItemDto()
-              {
+            {
               OrderId = order.OrderId,
               OrderSku = cabinetFeature.FeatureSKU,
               OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
@@ -167,14 +161,13 @@ public class PricingService
               MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
               UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100,
               ItemColorName = cabinetFeature.FeatureColorName,
-
               ItemHeight = cabinetFeature.FeatureHeight,
               ItemWidth = cabinetFeature.FeatureWidth,
               ItemDepth = 0,
               LinearFootCost = thisLinearFootCost,
               TotalPartCost = cabinetFeature.ThisTotalFeatureCost,
               pricingColorsDto = pricingColorsDto
-              };
+            };
             if (writer != null)
             {
               await writer.WriteCabinetItem(orderItemDto);
@@ -183,16 +176,16 @@ public class PricingService
         }
       }
 
-      if (!isIsland)
+      if (!wallPricerDto.isIsland)
       {
-        float remainingWallHeight = wallHeight - totalCabinetHeight;
+        float remainingWallHeight = wallPricerDto.wallHeight - totalCabinetHeight;
         // price wall color backing around cabinets
         if (remainingWallHeight > 0)
         {
           // get area from last cabinet
           float width = lastPart.thisPartWidth;
           float area = remainingWallHeight * lastPart.thisPartWidth;
-          var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(defaultColorId);
+          var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(wallPricerDto.cabinetColorId);
           if (pricingColors.Any())
           {
             pricingColorsDto = pricingColors.First();
@@ -213,7 +206,6 @@ public class PricingService
               MarkUp = (float)(thisTotalPartCost - lastPart.thisPartCost),
               UserMarkup = (float)thisTotalPartCost * thisUserMarkup / 100,
               ItemColorName = pricingColorsDto.ColorName,
-
               ItemHeight = remainingWallHeight,
               ItemWidth = lastPart.thisPartWidth,
               ItemDepth = 0,

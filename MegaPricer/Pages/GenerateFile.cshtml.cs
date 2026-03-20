@@ -8,10 +8,10 @@ namespace MegaPricer.Pages;
 public class GenerateFileModel : PageModel
 {
   private readonly ILogger<GenerateFileModel> _logger;
-  private PricingService _pricingService;
+  private IPricingService _pricingService;
   private PriceReportWriter _priceReportWriter;
 
-  public GenerateFileModel(ILogger<GenerateFileModel> logger, PricingService pricingService, PriceReportWriter priceReportWriter)
+  public GenerateFileModel(ILogger<GenerateFileModel> logger, IPricingService pricingService, PriceReportWriter priceReportWriter)
   {
     _logger = logger;
     _pricingService = pricingService;

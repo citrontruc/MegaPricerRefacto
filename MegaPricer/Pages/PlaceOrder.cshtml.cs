@@ -8,10 +8,10 @@ namespace MegaPricer.Pages;
 public class PlaceOrderModel : PageModel
 {
   private readonly ILogger<PlaceOrderModel> _logger;
-  private PricingService _pricingService;
+  private IPricingService _pricingService;
   private OrderWriter _orderWriter;
 
-  public PlaceOrderModel(ILogger<PlaceOrderModel> logger, PricingService pricingService, OrderWriter orderWriter)
+  public PlaceOrderModel(ILogger<PlaceOrderModel> logger, IPricingService pricingService, OrderWriter orderWriter)
   {
     _logger = logger;
     _pricingService = pricingService;

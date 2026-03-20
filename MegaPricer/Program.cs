@@ -29,6 +29,7 @@ builder.Services.AddScoped<IPricingSkuRepository, PricingSkuRepository>();
 builder.Services.AddScoped<PriceReportWriter>();
 builder.Services.AddScoped<OrderWriter>();
 builder.Services.AddScoped<PricingService>();
+builder.Services.AddScoped<IPricingService, PricingServiceErrorHandling>();
 
 var app = builder.Build();
 

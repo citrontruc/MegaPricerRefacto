@@ -26,6 +26,7 @@ builder.Services.AddScoped<IOrderItemRepository, OrderItemRepository>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IPricingColorsRepository, PricingColorsRepository>();
 builder.Services.AddScoped<IPricingSkuRepository, PricingSkuRepository>();
+builder.Services.AddScoped<PriceReportWriter>();
 builder.Services.AddScoped<OrderWriter>();
 builder.Services.AddScoped<PricingService>();
 

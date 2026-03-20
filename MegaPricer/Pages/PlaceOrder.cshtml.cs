@@ -9,11 +9,13 @@ public class PlaceOrderModel : PageModel
 {
   private readonly ILogger<PlaceOrderModel> _logger;
   private PricingService _pricingService;
+  private OrderWriter _orderWriter;
 
-  public PlaceOrderModel(ILogger<PlaceOrderModel> logger, PricingService pricingService)
+  public PlaceOrderModel(ILogger<PlaceOrderModel> logger, PricingService pricingService, OrderWriter orderWriter)
   {
     _logger = logger;
     _pricingService = pricingService;
+    _orderWriter = orderWriter;
   }
 
   public async Task OnGet()
@@ -42,7 +44,7 @@ public class PlaceOrderModel : PageModel
           wallOrderNum = 1,
           userName = userName
         },
-        RefType.Order
+        _orderWriter
       )
     ).Value.ToString();
   }

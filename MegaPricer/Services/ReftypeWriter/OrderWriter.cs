@@ -3,7 +3,7 @@ using MegaPricer.Dtos;
 
 namespace MegaPricer.Services;
 
-public class OrderWriter
+public class OrderWriter : IRefTypeWriter
 {
     private IOrderItemRepository _orderItemRepository;
     private IOrderRepository _orderRepository;
@@ -16,7 +16,7 @@ public class OrderWriter
         _orderRepository = orderRepository;
     }
 
-    public async Task InitializeWriter(Order order, Kitchen Kitchen)
+  public async Task InitializeWriter(Order order, Kitchen Kitchen)
     {
         // create a new order
         order.KitchenId = Kitchen.KitchenId;
@@ -34,4 +34,6 @@ public class OrderWriter
     {
         await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
     }
+
+    public void Dispose() {}
 }

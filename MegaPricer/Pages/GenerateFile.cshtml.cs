@@ -9,11 +9,13 @@ public class GenerateFileModel : PageModel
 {
   private readonly ILogger<GenerateFileModel> _logger;
   private PricingService _pricingService;
+  private PriceReportWriter _priceReportWriter;
 
-  public GenerateFileModel(ILogger<GenerateFileModel> logger, PricingService pricingService)
+  public GenerateFileModel(ILogger<GenerateFileModel> logger, PricingService pricingService, PriceReportWriter priceReportWriter)
   {
     _logger = logger;
     _pricingService = pricingService;
+    _priceReportWriter = priceReportWriter;
   }
 
   public async Task OnGet()
@@ -42,7 +44,7 @@ public class GenerateFileModel : PageModel
           wallOrderNum = 1,
           userName = userName
         },
-        RefType.PriceReport
+        _priceReportWriter
       )
     ).Value.ToString();
   }

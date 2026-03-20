@@ -24,7 +24,7 @@
         wallOrderNum = wall.WallOrder,
         userName = User.Identity.Name
     };
-    Result<PriceResult> result = await pricingService.CalculatePrice(customerOrder, RefType.Default);
+    Result<PriceResult> result = await pricingService.CalculatePrice(customerOrder, null);
     @if (result.IsSuccess){
         <h3>Wall @wall.Name</h3>
         <span>Wall Order: @wall.WallOrder</span>

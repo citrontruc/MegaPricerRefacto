@@ -13,7 +13,6 @@ public class PricingService
   private IUserMarkupRepository _userMarkupRepository;
   private IPricingColorsRepository _pricingColorsRepository;
   private IPricingSkuRepository _pricingSkuRepository;
-  private OrderWriter _orderWriter;
 
   public PricingService(
     IFeatureRepository featureRepository,
@@ -21,8 +20,7 @@ public class PricingService
     IWallRepository wallRepository,
     IUserMarkupRepository userMarkupRepository,
     IPricingColorsRepository pricingColorsRepository,
-    IPricingSkuRepository pricingSkuRepository,
-    OrderWriter orderWriter
+    IPricingSkuRepository pricingSkuRepository
     )
   {
     _featureRepository = featureRepository;
@@ -31,10 +29,9 @@ public class PricingService
     _userMarkupRepository = userMarkupRepository;
     _pricingColorsRepository = pricingColorsRepository;
     _pricingSkuRepository = pricingSkuRepository;
-    _orderWriter = orderWriter;
   }
 
-  public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
+  public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, IRefTypeWriter? writer)
   {
     if (Context.Session[customerOrder.userName]["PricingOff"].ToString() == "Y") return Result<PriceResult>.Success(new PriceResult(0, 0, 0));
 
@@ -43,12 +40,10 @@ public class PricingService
     CabinetDto lastPart = new();
     PricingColorsDto pricingColorsDto = new();
     PriceResult priceResult = new(0, 0, 0);
-    //float thisColorSquareFoot = 0;
     float thisLinearFootCost = 0; // Not modified in whole script
     int thisPartQty = 0; // Not modified in whole script
     decimal thisTotalPartCost = 0;
     float thisUserMarkup = 0;
-    StreamWriter sr = null;
 
     Context.Session[customerOrder.userName]["WallWeight"] = 0;
 
@@ -70,19 +65,9 @@ public class PricingService
         return Result<PriceResult>.Failure(new Error("Invalid Value", "Invalid wallOrderNum"));
       }
 
-      if (refType == RefType.PriceReport)
+      if (writer != null)
       {
-        // Start writing to the report file
-        string baseDirectory = AppContext.BaseDirectory;
-        string path = baseDirectory + "Orders.csv";
-        sr = new StreamWriter(path);
-        sr.WriteLine($"{kitchen.Name} ({kitchen.KitchenId}) - Run time: {DateTime.Now:T} ");
-        sr.WriteLine("");
-        sr.WriteLine("Part Name,Part SKU,Height,Width,Depth,Color,Sq Ft $, Lin Ft $,Per Piece $,# Needed,Part Price,Add On %,Total Part Price");
-      }
-      else if (refType == RefType.Order)
-      {
-        await _orderWriter.InitializeWriter(order, kitchen);
+        await writer.InitializeWriter(order, kitchen);
       }
 
       int defaultColorId = WallDtoValues.First().cabinetColorId;
@@ -124,23 +109,26 @@ public class PricingService
           priceResult.SubtotalPlus = thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
         }
 
-        if (refType == RefType.Order)
+        OrderItemDto orderItemDto = new OrderItemDto()
         {
-          OrderItemDto orderItemDto = new OrderItemDto()
-          {
-            OrderId = order.OrderId,
-            OrderSku = cabinetValue.thisPartSku,
-            OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
-            Cost = cabinetValue.thisPartCost,
-            MarkUp = (float)(thisTotalPartCost - cabinetValue.thisPartCost),
-            UserMarkup = (float)thisTotalPartCost * (thisUserMarkup / 100)
-          };
-          await _orderWriter.WriteCabinetItem(orderItemDto);
-        }
-        if (refType == RefType.PriceReport)
+          OrderId = order.OrderId,
+          OrderSku = cabinetValue.thisPartSku,
+          OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
+          Cost = cabinetValue.thisPartCost,
+          MarkUp = (float)(thisTotalPartCost - cabinetValue.thisPartCost),
+          UserMarkup = (float)thisTotalPartCost * (thisUserMarkup / 100),
+          ItemHeight = cabinetValue.thisPartHeight,
+          ItemWidth = cabinetValue.thisPartWidth,
+          ItemColorName = pricingColorsDto.ColorName,
+          ItemDepth = cabinetValue.thisPartDepth,
+          LinearFootCost = thisLinearFootCost,
+          TotalPartCost = thisTotalPartCost,
+          pricingColorsDto = pricingColorsDto
+
+        };
+        if (writer != null)
         {
-          // write out required part(s) to the report file
-          sr.WriteLine($"{cabinetValue.thisPartSku},{cabinetValue.thisPartHeight},{cabinetValue.thisPartWidth},{cabinetValue.thisPartDepth},{pricingColorsDto.ColorName},{pricingColorsDto.ColorSquareFoot},{thisLinearFootCost},{cabinetValue.thisPartCost},{thisPartQty},{cabinetValue.thisPartCost * thisPartQty},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+          await writer.WriteCabinetItem(orderItemDto);
         }
 
         // get feature cost
@@ -169,23 +157,27 @@ public class PricingService
               priceResult.SubtotalFlat += cabinetFeature.FeatureCost;
               priceResult.SubtotalPlus += cabinetFeature.ThisTotalFeatureCost * (decimal)(1 + thisUserMarkup / 100);
             }
-            if (refType == RefType.Order)
+
+            orderItemDto = new OrderItemDto()
+              {
+              OrderId = order.OrderId,
+              OrderSku = cabinetFeature.FeatureSKU,
+              OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
+              Cost = (decimal)cabinetFeature.WholesalePrice,
+              MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
+              UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100,
+              ItemColorName = cabinetFeature.FeatureColorName,
+
+              ItemHeight = cabinetFeature.FeatureHeight,
+              ItemWidth = cabinetFeature.FeatureWidth,
+              ItemDepth = 0,
+              LinearFootCost = thisLinearFootCost,
+              TotalPartCost = cabinetFeature.ThisTotalFeatureCost,
+              pricingColorsDto = pricingColorsDto
+              };
+            if (writer != null)
             {
-              OrderItemDto orderItemDto = new OrderItemDto()
-                {
-                OrderId = order.OrderId,
-                OrderSku = cabinetFeature.FeatureSKU,
-                OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
-                Cost = cabinetFeature.FeatureCost,
-                MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
-                UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100
-                };
-              await _orderWriter.WriteCabinetItem(orderItemDto);
-            }
-            else if (refType == RefType.PriceReport)
-            {
-              // write out required part(s) to the report file
-              sr.WriteLine($"{cabinetFeature.FeatureSKU},{cabinetFeature.FeatureHeight},{cabinetFeature.FeatureWidth},{cabinetFeature.FeatureColorName},{pricingColorsDtoCabinet.ColorSquareFoot},{thisLinearFootCost},{cabinetFeature.WholesalePrice},{cabinetFeature.Quantity},{cabinetFeature.WholesalePrice * cabinetFeature.Quantity},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(cabinetFeature.ThisTotalFeatureCost)}");
+              await writer.WriteCabinetItem(orderItemDto);
             }
           }
         }
@@ -197,9 +189,9 @@ public class PricingService
         // price wall color backing around cabinets
         if (remainingWallHeight > 0)
         {
-          // get width from last cabinet
+          // get area from last cabinet
           float width = lastPart.thisPartWidth;
-          float area = remainingWallHeight * width;
+          float area = remainingWallHeight * lastPart.thisPartWidth;
           var pricingColors = await _pricingColorsRepository.RetrievePricingColorsAsync(defaultColorId);
           if (pricingColors.Any())
           {
@@ -212,27 +204,29 @@ public class PricingService
             priceResult.SubtotalPlus += thisTotalPartCost * (decimal)(1 + thisUserMarkup / 100);
           }
 
-          if (refType == RefType.Order)
+          OrderItemDto orderItemDto = new OrderItemDto()
+            {
+              OrderId = order.OrderId,
+              OrderSku = lastPart.thisPartSku,
+              OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
+              Cost = lastPart.thisPartCost,
+              MarkUp = (float)(thisTotalPartCost - lastPart.thisPartCost),
+              UserMarkup = (float)thisTotalPartCost * thisUserMarkup / 100,
+              ItemColorName = pricingColorsDto.ColorName,
+
+              ItemHeight = remainingWallHeight,
+              ItemWidth = lastPart.thisPartWidth,
+              ItemDepth = 0,
+              LinearFootCost = thisLinearFootCost,
+              TotalPartCost = thisTotalPartCost,
+              pricingColorsDto = pricingColorsDto
+            };
+          if (writer != null)
           {
-            OrderItemDto orderItemDto = new OrderItemDto()
-              {
-                OrderId = order.OrderId,
-                OrderSku = lastPart.thisPartSku,
-                OrderQuantity = thisPartQty == 0 ? 1 : thisPartQty,
-                Cost = lastPart.thisPartCost,
-                MarkUp = (float)(thisTotalPartCost - lastPart.thisPartCost),
-                UserMarkup = (float)thisTotalPartCost * thisUserMarkup / 100
-              };
-            await _orderWriter.WriteCabinetItem(orderItemDto);
-          }
-          else if (refType == RefType.PriceReport)
-          {
-            // write out required part(s) to the report file
-            sr.WriteLine($"{lastPart.thisPartSku},{remainingWallHeight},{width},{pricingColorsDto.ColorName},{pricingColorsDto.ColorSquareFoot},{thisLinearFootCost},{lastPart.thisPartCost},{thisPartQty},{lastPart.thisPartCost * thisPartQty},{pricingColorsDto.ColorMarkup},{GlobalHelpers.Format(thisTotalPartCost)}");
+            await writer.WriteCabinetItem(orderItemDto);
           }
         }
       }
-
 
       return Result<PriceResult>.Success(priceResult);
     }
@@ -243,11 +237,9 @@ public class PricingService
     }
     finally
     {
-      // clean up
-      if (sr != null)
+      if (writer != null)
       {
-        sr.Close();
-        sr.Dispose();
+        writer.Dispose();
       }
     }
   }

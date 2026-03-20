@@ -399,3 +399,6 @@ FodyWeavers.xsd
 /module2/before/MegaPricer/database.sqlite
 /module2/before/MegaPricer/database.sqlite-shm
 /module2/before/MegaPricer/database.sqlite-wal
+
+# sqlite database
+*.sqlite

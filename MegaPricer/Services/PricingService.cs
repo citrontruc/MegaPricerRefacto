@@ -1,8 +1,6 @@
-﻿using System.Data;
-using MegaPricer.Common;
+﻿using MegaPricer.Common;
 using MegaPricer.Data;
 using MegaPricer.Entities;
-using Microsoft.Data.Sqlite;
 using MegaPricer.Dtos;
 
 namespace MegaPricer.Services;
@@ -13,30 +11,27 @@ public class PricingService
   private ICabinetRepository _cabinetRepository;
   private IWallRepository _wallRepository;
   private IUserMarkupRepository _userMarkupRepository;
-  private IOrderItemRepository _orderItemRepository;
-  private IOrderRepository _orderRepository;
   private IPricingColorsRepository _pricingColorsRepository;
   private IPricingSkuRepository _pricingSkuRepository;
+  private OrderWriter _orderWriter;
 
   public PricingService(
     IFeatureRepository featureRepository,
     ICabinetRepository cabinetRepository,
     IWallRepository wallRepository,
     IUserMarkupRepository userMarkupRepository,
-    IOrderItemRepository orderItemRepository,
     IPricingColorsRepository pricingColorsRepository,
-    IOrderRepository orderRepository,
-    IPricingSkuRepository pricingSkuRepository
+    IPricingSkuRepository pricingSkuRepository,
+    OrderWriter orderWriter
     )
   {
     _featureRepository = featureRepository;
     _cabinetRepository = cabinetRepository;
     _wallRepository = wallRepository;
     _userMarkupRepository = userMarkupRepository;
-    _orderItemRepository = orderItemRepository;
     _pricingColorsRepository = pricingColorsRepository;
-    _orderRepository = orderRepository;
     _pricingSkuRepository = pricingSkuRepository;
+    _orderWriter = orderWriter;
   }
 
   public async Task<Result<PriceResult>> CalculatePrice(CustomerOrder customerOrder, RefType refType)
@@ -87,16 +82,7 @@ public class PricingService
       }
       else if (refType == RefType.Order)
       {
-        // create a new order
-        order.KitchenId = customerOrder.kitchenId;
-        OrderDto orderDto = new OrderDto()
-        {
-          KitchenId = order.KitchenId,
-          OrderDate = order.OrderDate,
-          OrderStatus = order.OrderStatus,
-          OrderType = order.OrderType
-        };
-        order.OrderId = await _orderRepository.StoreOrderAsync(orderDto);
+        await _orderWriter.InitializeWriter(order, kitchen);
       }
 
       int defaultColorId = WallDtoValues.First().cabinetColorId;
@@ -149,7 +135,7 @@ public class PricingService
             MarkUp = (float)(thisTotalPartCost - cabinetValue.thisPartCost),
             UserMarkup = (float)thisTotalPartCost * (thisUserMarkup / 100)
           };
-          await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
+          await _orderWriter.WriteCabinetItem(orderItemDto);
         }
         if (refType == RefType.PriceReport)
         {
@@ -186,16 +172,15 @@ public class PricingService
             if (refType == RefType.Order)
             {
               OrderItemDto orderItemDto = new OrderItemDto()
-              {
+                {
                 OrderId = order.OrderId,
                 OrderSku = cabinetFeature.FeatureSKU,
                 OrderQuantity = cabinetFeature.Quantity == 0 ? 1 : cabinetFeature.Quantity,
                 Cost = cabinetFeature.FeatureCost,
                 MarkUp = (float)(cabinetFeature.ThisTotalFeatureCost - cabinetFeature.FeatureCost),
                 UserMarkup = (float)cabinetFeature.ThisTotalFeatureCost * thisUserMarkup / 100
-              };
-              await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
-
+                };
+              await _orderWriter.WriteCabinetItem(orderItemDto);
             }
             else if (refType == RefType.PriceReport)
             {
@@ -238,7 +223,7 @@ public class PricingService
                 MarkUp = (float)(thisTotalPartCost - lastPart.thisPartCost),
                 UserMarkup = (float)thisTotalPartCost * thisUserMarkup / 100
               };
-              await _orderItemRepository.StoreOrderItemAsync(orderItemDto);
+            await _orderWriter.WriteCabinetItem(orderItemDto);
           }
           else if (refType == RefType.PriceReport)
           {
